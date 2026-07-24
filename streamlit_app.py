@@ -3,7 +3,7 @@ TRACKER DE LICITACIONES - Brighter Peru   (version NUBE / Streamlit Cloud)
 Oportunidades VIGENTES con el Estado, en vivo desde la API publica de SEACE.
 NUEVO: etiquetas de busqueda EDITABLES desde la propia pagina (sin tocar codigo).
 """
-import os, unicodedata
+import os, re, unicodedata
 import pandas as pd
 import requests
 import streamlit as st
@@ -16,6 +16,10 @@ DEF_CLAVES = ["pantalla interactiva","pizarra digital","monitor interactivo",
               "pantalla led","senalizacion digital","video wall","kiosco",
               "totem","equipamiento audiovisual","proyector"]
 DEF_EXCLUIR = ["protector de pantalla","luminaria","presa","drone","optotipo"]
+
+def separar(txt):
+    """Separa etiquetas por coma o por salto de linea (ambos modos)."""
+    return [x.strip() for x in re.split(r"[,\n]", txt) if x.strip()]
 
 def norm(t):
     if not t: return ""
@@ -81,14 +85,14 @@ claves_cfg, excluir_cfg = cargar_config()
 
 # --- PANEL EDITABLE DE ETIQUETAS ---
 st.sidebar.header("🏷️ Etiquetas de búsqueda")
-st.sidebar.caption("Una por línea. Edita para investigar otros productos.")
+st.sidebar.caption("Separa por coma o por línea. Edita para investigar otros productos.")
 txt_etiquetas = st.sidebar.text_area("Etiquetas de interés",
     value="\n".join(claves_cfg), height=180, key="etq")
 txt_excluir = st.sidebar.text_area("Excluir (una por línea)",
     value="\n".join(excluir_cfg), height=90, key="exc")
 
-etiquetas = [e.strip() for e in txt_etiquetas.splitlines() if e.strip()]
-excluir = [norm(e) for e in txt_excluir.splitlines() if e.strip()]
+etiquetas = separar(txt_etiquetas)
+excluir = [norm(e) for e in separar(txt_excluir)]
 
 # clasificar segun etiquetas editadas
 df = df.copy()
