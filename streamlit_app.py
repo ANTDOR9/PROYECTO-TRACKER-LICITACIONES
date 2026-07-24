@@ -17,6 +17,7 @@ DEF_CLAVES = ["pantalla interactiva","pizarra digital","monitor interactivo",
               "pantalla led","senalizacion digital","video wall","kiosco",
               "totem","equipamiento audiovisual","proyector"]
 DEF_EXCLUIR = ["protector de pantalla","luminaria","presa","drone","optotipo"]
+SEACE_PORTAL = "https://prod2.seace.gob.pe/seacebus-uiwd-pub/buscadorPublico/buscadorPublico.xhtml"
 
 def separar(txt):
     """Separa etiquetas por coma o por salto de linea (ambos modos)."""
@@ -61,6 +62,7 @@ def traer_todo():
             "Tipo": o.get("detTipoProceso",""),
             "Fin inscripcion": o.get("fechaFin",""),
             "Presentacion propuestas": o.get("fechaPresentacionPropuestas",""),
+            "Ver en SEACE": SEACE_PORTAL,
         })
     return pd.DataFrame(filas), len(data)
 
@@ -172,9 +174,13 @@ else:
     st.divider()
     st.dataframe(
         f[["Etiqueta","Nomenclatura","Entidad","Objeto","Descripcion",
-           "Valor referencial","Tipo","Fin inscripcion","Presentacion propuestas"]]
+           "Valor referencial","Tipo","Fin inscripcion","Presentacion propuestas","Ver en SEACE"]]
           .sort_values("Fin inscripcion"),
-        use_container_width=True, hide_index=True)
+        use_container_width=True, hide_index=True,
+        column_config={"Ver en SEACE": st.column_config.LinkColumn(
+            "Ver en SEACE", display_text="Abrir portal")})
+    st.caption("Para descargar las bases: abre el portal SEACE y busca por la Nomenclatura del proceso "
+               "(SEACE protege las bases con inicio de sesion, por eso no se descargan directamente aqui).")
 
     with st.expander("Resumen por etiqueta"):
         st.dataframe(f.groupby("Etiqueta").size().reset_index(name="Oportunidades"),
@@ -184,3 +190,4 @@ else:
         exportar_excel(f),
         file_name="tracker_licitaciones.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    
