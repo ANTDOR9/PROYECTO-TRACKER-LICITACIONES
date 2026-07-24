@@ -66,7 +66,9 @@ def descargar_json(item):
     url = BLOB_BASE + item["C_Ruta"].strip("/") + "/" + item["C_FileJson"]
     r = requests.get(url, timeout=180)
     r.raise_for_status()
-    return r.json()
+    # Los archivos traen caracteres de control crudos -> parse tolerante
+    texto = r.content.decode("utf-8", errors="replace")
+    return json.loads(texto, strict=False)
 
 def registros(data):
     """Normaliza la respuesta a una lista de registros, sea cual sea su forma."""
@@ -113,7 +115,7 @@ def main():
 
     todas = []
     if a.archivo:
-        data = json.load(open(a.archivo, encoding="utf-8"))
+        data = json.loads(open(a.archivo, encoding="utf-8", errors="replace").read(), strict=False)
         todas = procesar(data, c, a.inspeccionar)
     else:
         items = listar_archivos(a.anio)
