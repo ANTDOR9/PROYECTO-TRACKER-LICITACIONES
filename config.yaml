@@ -1,46 +1,73 @@
 # ============================================================
-#  Monitor de Licitaciones - Brighter Peru
-#  Configuracion editable SIN tocar codigo.
-#  Modifica las palabras clave y filtros aqui.
+#  TRACKER DE LICITACIONES - Brighter Peru
+#  Configuracion editable SIN tocar codigo (para Monica/Analid).
+#  Aqui se controla QUE se busca y QUE se descarta.
 # ============================================================
 
-# Fuente de datos OCDS (OECE - ex OSCE)
-fuente:
-  # URL de descarga por anio. {anio} se reemplaza automaticamente.
-  url_anual: "https://data.open-contracting.org/en/publication/135/download?name={anio}.jsonl.gz"
-  anios: [2025, 2026]   # anios a extraer para el historico (Fase 1)
-
-# Palabras clave: si el titulo/objeto/items contiene ALGUNA, el registro se incluye.
-# Todo en minusculas y sin tildes (el extractor normaliza antes de comparar).
+# --- Palabras clave agrupadas por categoria ---
+# Cada resultado se etiqueta con la categoria cuya palabra coincidio.
+# El matcher tolera plurales y tildes.
 palabras_clave:
-  - "pantalla interactiva"
-  - "pantalla tactil"
-  - "monitor interactivo"
-  - "pizarra interactiva"
-  - "pizarra digital"
-  - "pizarra electronica"
-  - "panel interactivo"
-  - "kiosco"
-  - "kiosko"
-  - "totem"
-  - "senalizacion digital"
-  - "pantalla led"
-  - "pantalla digital"
-  - "videowall"
-  - "equipamiento audiovisual"
-  - "proyector interactivo"
+  Pantallas interactivas:
+    - "pantalla interactiva"
+    - "panel interactivo"
+    - "pizarra interactiva"
+    - "pizarra digital"
+    - "monitor interactivo"
+    - "pantalla tactil"
+  Pantallas y senaletica:
+    - "pantalla led"
+    - "pantalla digital"
+    - "senalizacion digital"
+    - "video wall"
+    - "videowall"
+  Kioscos y totems:
+    - "kiosco interactivo"
+    - "kiosco digital"
+    - "totem interactivo"
+    - "totem multimedia"
+    - "totem tactil"
+  Audiovisual:
+    - "equipo audiovisual"
+    - "equipamiento audiovisual"
+    - "sistema audiovisual"
+    - "proyector multimedia"
+    - "proyector interactivo"
+    - "videoproyector"
+    - "sistema de videoconferencia"
 
-# Palabras que DESCARTAN un registro aunque tenga palabra clave (evita falsos positivos).
+# --- Exclusiones: descartan un registro aunque tenga palabra clave ---
+# (evitan falsos positivos detectados en pruebas reales)
 palabras_excluir:
   - "protector de pantalla"
   - "mica de pantalla"
   - "lamina protectora"
+  - "luminaria"            # "luminaria tipo proyector" = foco LED, no proyector de video
+  - "optotipo"             # proyector oftalmologico
+  - "totem publicitario"   # totem de feria/evento, no kiosco digital
+  - "campo ferial"
+  - "estand"
+  - "presa"                # "pantalla de la presa" = cara del dique, no pantalla
+  - "impermeabilizacion"
+  - "drone"
+  - "vehiculo aereo"
 
-# Filtros por defecto del dashboard (el usuario puede cambiarlos en pantalla).
+# --- Filtros por defecto del dashboard ---
 filtros:
-  monto_minimo: 0          # soles
-  departamentos: []        # vacio = todos
+  monto_minimo: 0
+  departamentos: []
+
+# --- Fuentes de datos ---
+fuentes:
+  seace_vigentes:
+    descripcion: "API publica SEACE - oportunidades vigentes (a que postular ahora)"
+    url: "https://prod4.seace.gob.pe:8086/api/oportunidades/codObjeto/codDepartamento/sintesisProceso/codTipoProceso/0/0/0/0"
+    cache_minutos: 60
+    activo: true
+  ocds_oece:
+    descripcion: "Portal Contrataciones Abiertas OECE (historico, Fase 1)"
+    url_anual: "https://data.open-contracting.org/en/publication/135/download?name={anio}.jsonl.gz"
+    activo: false   # se activa en el modo servidor (Docker), no en Streamlit Cloud
 
 salida:
   base_datos: "data/licitaciones.db"
-  excel: "data/licitaciones_export.xlsx"
