@@ -5,6 +5,7 @@ NUEVO: etiquetas de busqueda EDITABLES desde la propia pagina (sin tocar codigo)
 """
 import os, re, unicodedata
 from io import BytesIO
+from datetime import datetime
 import pandas as pd
 import requests
 import streamlit as st
@@ -41,6 +42,22 @@ def cargar_config():
         excluir = c.get("palabras_excluir", DEF_EXCLUIR)
     return claves, excluir
 
+def estado_por_fecha(fecha_str):
+    """Devuelve (estado, dias_restantes) segun la fecha fin de inscripcion."""
+    if not fecha_str:
+        return "Sin fecha", None
+    for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y"):
+        try:
+            f = datetime.strptime(str(fecha_str).strip(), fmt)
+            dias = (f.date() - datetime.now().date()).days
+            if dias < 0:   estado = "Vencida"
+            elif dias <= 7: estado = "Cierra pronto"
+            else:          estado = "Abierta"
+            return estado, dias
+        except ValueError:
+            continue
+    return "Sin fecha", None
+
 @st.cache_data(ttl=3600)
 def traer_todo():
     """Trae TODAS las oportunidades vigentes (sin filtrar) para filtrar en vivo."""
@@ -64,7 +81,12 @@ def traer_todo():
             "Presentacion propuestas": o.get("fechaPresentacionPropuestas",""),
             "Ver en SEACE": SEACE_PORTAL,
         })
-    return pd.DataFrame(filas), len(data)
+    df_tmp = pd.DataFrame(filas)
+    if not df_tmp.empty:
+        est = df_tmp["Fin inscripcion"].apply(estado_por_fecha)
+        df_tmp["Estado"] = [e[0] for e in est]
+        df_tmp["Dias restantes"] = [e[1] for e in est]
+    return df_tmp, len(data)
 
 def etiqueta_de(texto, etiquetas, excluir):
     if any(x in texto for x in excluir): return None
@@ -74,11 +96,26 @@ def etiqueta_de(texto, etiquetas, excluir):
             return et
     return None
 
+COLOR_ESTADO = {"Abierta": "#E1F5EE", "Cierra pronto": "#FAEEDA",
+                "Vencida": "#FCEBEB", "Sin fecha": "#F1EFE8"}
+
+def _colorea(fila):
+    c = COLOR_ESTADO.get(fila.get("Estado"), "")
+    return [f"background-color: {c}" for _ in fila]
+
+def _tabla(f):
+    cols = ["Estado","Dias restantes","Etiqueta","Nomenclatura","Entidad","Objeto",
+            "Descripcion","Valor referencial","Tipo","Fin inscripcion",
+            "Presentacion propuestas","Ver en SEACE"]
+    cols = [c for c in cols if c in f.columns]
+    d = f[cols].sort_values("Dias restantes", na_position="last")
+    return d.style.apply(_colorea, axis=1)
+
 def exportar_excel(df):
     """Genera un Excel ordenado y facil de leer (bytes)."""
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
-    orden = ["Etiqueta","Nomenclatura","Entidad","Objeto","Descripcion",
+    orden = ["Estado","Dias restantes","Etiqueta","Nomenclatura","Entidad","Objeto","Descripcion",
              "Valor referencial","Tipo","Fin inscripcion","Presentacion propuestas"]
     cols = [c for c in orden if c in df.columns]
     d = df[cols].copy()
@@ -101,7 +138,7 @@ def exportar_excel(df):
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             c.border = borde
         # Anchos por columna
-        anchos = {"Etiqueta":22,"Nomenclatura":26,"Entidad":34,"Objeto":16,
+        anchos = {"Estado":14,"Dias restantes":14,"Etiqueta":22,"Nomenclatura":26,"Entidad":34,"Objeto":16,
                   "Descripcion":50,"Valor referencial":18,"Tipo":22,
                   "Fin inscripcion":18,"Presentacion propuestas":22}
         for j, col in enumerate(cols, start=1):
@@ -116,7 +153,11 @@ def exportar_excel(df):
                 c.alignment = Alignment(vertical="top", wrap_text=(col in ("Descripcion","Entidad")))
                 if col == "Valor referencial":
                     c.number_format = '"S/" #,##0.00'
-                if i % 2 == 1:
+                est = d.iloc[i].get("Estado", "")
+                colf = {"Abierta":"E1F5EE","Cierra pronto":"FAEEDA","Vencida":"FCEBEB"}.get(est)
+                if colf:
+                    c.fill = PatternFill("solid", fgColor=colf)
+                elif i % 2 == 1:
                     c.fill = PatternFill("solid", fgColor="F2F5F7")
         ws.freeze_panes = "A3"
         ws.auto_filter.ref = f"A2:{get_column_letter(len(cols))}{2+n}"
@@ -173,10 +214,7 @@ if f.empty:
 else:
     st.divider()
     st.dataframe(
-        f[["Etiqueta","Nomenclatura","Entidad","Objeto","Descripcion",
-           "Valor referencial","Tipo","Fin inscripcion","Presentacion propuestas","Ver en SEACE"]]
-          .sort_values("Fin inscripcion"),
-        use_container_width=True, hide_index=True,
+        _tabla(f), use_container_width=True, hide_index=True,
         column_config={"Ver en SEACE": st.column_config.LinkColumn(
             "Ver en SEACE", display_text="Abrir portal")})
     st.caption("Para descargar las bases: abre el portal SEACE y busca por la Nomenclatura del proceso "
@@ -190,4 +228,3 @@ else:
         exportar_excel(f),
         file_name="tracker_licitaciones.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    
