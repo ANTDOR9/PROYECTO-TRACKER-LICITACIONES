@@ -44,6 +44,23 @@ def aplanar_texto(registro):
     rec(registro)
     return norm(" | ".join(partes))
 
+def descripciones(reg):
+    """Recolecta textos descriptivos (titulos e items) de un release OCDS."""
+    out = []
+    def add(x):
+        if isinstance(x, str) and len(x) > 3: out.append(x.strip())
+    if isinstance(reg, dict):
+        t = reg.get("tender") or {}
+        add(t.get("title")); add(t.get("description"))
+        for it in (t.get("items") or []):
+            add(it.get("description"))
+            cl = it.get("classification") or {}
+            add(cl.get("description"))
+        for aw in (reg.get("awards") or []):
+            for it in (aw.get("items") or []):
+                add(it.get("description"))
+    return out
+
 def clasifica(texto, claves_por_cat, excluir):
     if any(x in texto for x in excluir): return None
     for cat, terminos in claves_por_cat.items():
@@ -85,6 +102,17 @@ def procesar(data, c, inspeccionar=False):
         print("Campos del primer registro:")
         print(" ", list(regs[0].keys()) if isinstance(regs[0], dict) else type(regs[0]))
         print(f"  ({len(regs)} registros en el archivo)")
+        print("\n  --- Ejemplos de descripciones (para calibrar palabras clave) ---")
+        vistos = []
+        for reg in regs:
+            for d in descripciones(reg):
+                if d not in vistos:
+                    vistos.append(d)
+            if len(vistos) >= 25:
+                break
+        for d in vistos[:25]:
+            print("   -", d[:90])
+        print("  ---------------------------------------------------------------\n")
     claves = {cat: [norm(t) for t in terms] for cat, terms in c["palabras_clave"].items()}
     excluir = [norm(t) for t in c.get("palabras_excluir", [])]
     filas = []
