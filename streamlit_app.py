@@ -4,6 +4,7 @@ Oportunidades VIGENTES con el Estado, en vivo desde la API publica de SEACE.
 NUEVO: etiquetas de busqueda EDITABLES desde la propia pagina (sin tocar codigo).
 """
 import os, re, unicodedata
+from io import BytesIO
 import pandas as pd
 import requests
 import streamlit as st
@@ -71,6 +72,54 @@ def etiqueta_de(texto, etiquetas, excluir):
             return et
     return None
 
+def exportar_excel(df):
+    """Genera un Excel ordenado y facil de leer (bytes)."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    orden = ["Etiqueta","Nomenclatura","Entidad","Objeto","Descripcion",
+             "Valor referencial","Tipo","Fin inscripcion","Presentacion propuestas"]
+    cols = [c for c in orden if c in df.columns]
+    d = df[cols].copy()
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        d.to_excel(writer, index=False, sheet_name="Oportunidades", startrow=1)
+        wb = writer.book
+        ws = writer.sheets["Oportunidades"]
+        # Titulo
+        ws.cell(row=1, column=1, value="Tracker de Licitaciones - Brighter Peru")
+        ws.cell(row=1, column=1).font = Font(bold=True, size=13, color="1F3B4D")
+        # Encabezados (fila 2)
+        fill = PatternFill("solid", fgColor="1F3B4D")
+        thin = Side(style="thin", color="D9D9D9")
+        borde = Border(left=thin, right=thin, top=thin, bottom=thin)
+        for j, col in enumerate(cols, start=1):
+            c = ws.cell(row=2, column=j)
+            c.font = Font(bold=True, color="FFFFFF")
+            c.fill = fill
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            c.border = borde
+        # Anchos por columna
+        anchos = {"Etiqueta":22,"Nomenclatura":26,"Entidad":34,"Objeto":16,
+                  "Descripcion":50,"Valor referencial":18,"Tipo":22,
+                  "Fin inscripcion":18,"Presentacion propuestas":22}
+        for j, col in enumerate(cols, start=1):
+            ws.column_dimensions[get_column_letter(j)].width = anchos.get(col, 18)
+        # Formato de moneda + bordes + zebra en las filas de datos
+        n = len(d)
+        for i in range(n):
+            fila = 3 + i
+            for j, col in enumerate(cols, start=1):
+                c = ws.cell(row=fila, column=j)
+                c.border = borde
+                c.alignment = Alignment(vertical="top", wrap_text=(col in ("Descripcion","Entidad")))
+                if col == "Valor referencial":
+                    c.number_format = '"S/" #,##0.00'
+                if i % 2 == 1:
+                    c.fill = PatternFill("solid", fgColor="F2F5F7")
+        ws.freeze_panes = "A3"
+        ws.auto_filter.ref = f"A2:{get_column_letter(len(cols))}{2+n}"
+    return buffer.getvalue()
+
 st.set_page_config(page_title="Tracker de Licitaciones - Brighter", page_icon="📡", layout="wide")
 st.title("📡 Tracker de Licitaciones — Brighter Perú")
 st.caption("Oportunidades VIGENTES con el Estado (a las que postular ahora). Fuente: SEACE / OECE (en vivo).")
@@ -131,6 +180,7 @@ else:
         st.dataframe(f.groupby("Etiqueta").size().reset_index(name="Oportunidades"),
                      use_container_width=True, hide_index=True)
 
-    st.download_button("⬇️ Descargar Excel (CSV)",
-        f.to_csv(index=False).encode("utf-8-sig"),
-        file_name="tracker_licitaciones.csv", mime="text/csv")
+    st.download_button("⬇️ Descargar Excel",
+        exportar_excel(f),
+        file_name="tracker_licitaciones.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
