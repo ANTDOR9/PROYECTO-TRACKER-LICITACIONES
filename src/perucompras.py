@@ -102,6 +102,12 @@ def procesar(data, c, inspeccionar=False):
         print("Campos del primer registro:")
         print(" ", list(regs[0].keys()) if isinstance(regs[0], dict) else type(regs[0]))
         print(f"  ({len(regs)} registros en el archivo)")
+        print("\n  --- PRIMER REGISTRO COMPLETO (estructura real) ---")
+        try:
+            print(json.dumps(regs[0], ensure_ascii=False, indent=1)[:2500])
+        except Exception:
+            print(str(regs[0])[:2500])
+        print("  --- fin del registro ---\n")
         print("\n  --- Ejemplos de descripciones (para calibrar palabras clave) ---")
         vistos = []
         for reg in regs:
