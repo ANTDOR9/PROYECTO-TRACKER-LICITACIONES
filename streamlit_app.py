@@ -1,8 +1,7 @@
 """
 TRACKER DE LICITACIONES - Brighter Peru   (version NUBE / Streamlit Cloud)
-Oportunidades VIGENTES con el Estado (a que postular ahora), en vivo desde
-la API publica de SEACE. Combina: palabras clave por categoria + exclusiones
-inteligentes + etiquetado por categoria. No necesita base de datos local.
+Oportunidades VIGENTES con el Estado, en vivo desde la API publica de SEACE.
+NUEVO: etiquetas de busqueda EDITABLES desde la propia pagina (sin tocar codigo).
 """
 import os, unicodedata
 import pandas as pd
@@ -13,9 +12,10 @@ import yaml
 API = ("https://prod4.seace.gob.pe:8086/api/oportunidades/"
        "codObjeto/codDepartamento/sintesisProceso/codTipoProceso/0/0/0/0")
 
-# Respaldo por si no hay config.yaml
-DEF_CLAVES = {"Pantallas interactivas": ["pantalla interactiva","pizarra digital","monitor interactivo"]}
-DEF_EXCLUIR = ["protector de pantalla","luminaria","presa","drone"]
+DEF_CLAVES = ["pantalla interactiva","pizarra digital","monitor interactivo",
+              "pantalla led","senalizacion digital","video wall","kiosco",
+              "totem","equipamiento audiovisual","proyector"]
+DEF_EXCLUIR = ["protector de pantalla","luminaria","presa","drone","optotipo"]
 
 def norm(t):
     if not t: return ""
@@ -24,107 +24,109 @@ def norm(t):
 
 def cargar_config():
     ruta = os.path.join(os.path.dirname(__file__), "config.yaml")
+    claves, excluir = DEF_CLAVES, DEF_EXCLUIR
     if os.path.exists(ruta):
-        c = yaml.safe_load(open(ruta, encoding="utf-8"))
-        return c.get("palabras_clave", DEF_CLAVES), c.get("palabras_excluir", DEF_EXCLUIR)
-    return DEF_CLAVES, DEF_EXCLUIR
-
-def clasifica(texto_norm, claves_por_cat, excluir):
-    """Devuelve la categoria si coincide (tolera plurales), o None."""
-    if any(x in texto_norm for x in excluir):
-        return None
-    for categoria, terminos in claves_por_cat.items():
-        for termino in terminos:
-            toks = [t for t in norm(termino).split() if len(t) >= 4]
-            if toks and all(t in texto_norm for t in toks):
-                return categoria
-    return None
-
-def num(v):
-    return pd.to_numeric(str(v).replace(",", "") if v is not None else None, errors="coerce")
+        c = yaml.safe_load(open(ruta, encoding="utf-8")) or {}
+        pk = c.get("palabras_clave", {})
+        if isinstance(pk, dict):
+            claves = [t for terms in pk.values() for t in terms]
+        elif isinstance(pk, list):
+            claves = pk
+        excluir = c.get("palabras_excluir", DEF_EXCLUIR)
+    return claves, excluir
 
 @st.cache_data(ttl=3600)
-def traer_vigentes():
+def traer_todo():
+    """Trae TODAS las oportunidades vigentes (sin filtrar) para filtrar en vivo."""
     import urllib3; urllib3.disable_warnings()
     r = requests.get(API, timeout=120, verify=False)
     r.raise_for_status()
     data = r.json()
-    claves_cfg, excluir_cfg = cargar_config()
-    claves = {cat: [norm(t) for t in terms] for cat, terms in claves_cfg.items()}
-    excluir = [norm(t) for t in excluir_cfg]
     filas = []
     for o in data:
-        txt = norm(f"{o.get('detObjeto','')} {o.get('detItem','')} {o.get('sintesisProceso','')} {o.get('nomenclatura','')}")
-        cat = clasifica(txt, claves, excluir)
-        if cat:
-            # valor: primero el del proceso, si no el del item
-            valor = num(o.get("valorReferencial"))
-            if pd.isna(valor):
-                valor = num(o.get("valorReferencialItem"))
-            filas.append({
-                "Categoria": cat,
-                "Nomenclatura": o.get("nomenclatura",""),
-                "Entidad": o.get("detEntidad",""),
-                "Objeto": o.get("detObjeto",""),
-                "Descripcion": o.get("detItem","") or o.get("sintesisProceso",""),
-                "Valor referencial": valor,
-                "Moneda": o.get("monedaProceso",""),
-                "Tipo": o.get("detTipoProceso",""),
-                "Fin inscripcion": o.get("fechaFin",""),
-                "Presentacion propuestas": o.get("fechaPresentacionPropuestas",""),
-            })
+        texto = norm(f"{o.get('detObjeto','')} {o.get('detItem','')} {o.get('sintesisProceso','')} {o.get('nomenclatura','')}")
+        valor = pd.to_numeric(o.get("valorReferencial") or o.get("valorReferencialItem"), errors="coerce")
+        filas.append({
+            "_texto": texto,
+            "Nomenclatura": o.get("nomenclatura",""),
+            "Entidad": o.get("detEntidad",""),
+            "Objeto": o.get("detObjeto",""),
+            "Descripcion": o.get("detItem","") or o.get("sintesisProceso",""),
+            "Valor referencial": valor,
+            "Tipo": o.get("detTipoProceso",""),
+            "Fin inscripcion": o.get("fechaFin",""),
+            "Presentacion propuestas": o.get("fechaPresentacionPropuestas",""),
+        })
     return pd.DataFrame(filas), len(data)
+
+def etiqueta_de(texto, etiquetas, excluir):
+    if any(x in texto for x in excluir): return None
+    for et in etiquetas:
+        toks = [t for t in norm(et).split() if len(t) >= 4]
+        if toks and all(t in texto for t in toks):
+            return et
+    return None
 
 st.set_page_config(page_title="Tracker de Licitaciones - Brighter", page_icon="📡", layout="wide")
 st.title("📡 Tracker de Licitaciones — Brighter Perú")
-st.caption("Oportunidades VIGENTES con el Estado (a las que postular ahora): pantallas interactivas, "
-           "pizarras digitales, kioscos y equipamiento audiovisual. Fuente: SEACE / OECE (en vivo).")
+st.caption("Oportunidades VIGENTES con el Estado (a las que postular ahora). Fuente: SEACE / OECE (en vivo).")
 
 try:
-    df, total = traer_vigentes()
+    df, total = traer_todo()
 except Exception as e:
-    st.error(f"No se pudo consultar la API de SEACE en este momento.\n\n{e}")
-    st.info("Puede pasar si la API esta temporalmente caida. Intenta de nuevo en unos minutos.")
+    st.error(f"No se pudo consultar la API de SEACE.\n\n{e}")
     st.stop()
 
-if df.empty:
-    st.warning("No hay oportunidades vigentes que coincidan con el rubro en este momento.")
-    st.stop()
+claves_cfg, excluir_cfg = cargar_config()
 
+# --- PANEL EDITABLE DE ETIQUETAS ---
+st.sidebar.header("🏷️ Etiquetas de búsqueda")
+st.sidebar.caption("Una por línea. Edita para investigar otros productos.")
+txt_etiquetas = st.sidebar.text_area("Etiquetas de interés",
+    value="\n".join(claves_cfg), height=180, key="etq")
+txt_excluir = st.sidebar.text_area("Excluir (una por línea)",
+    value="\n".join(excluir_cfg), height=90, key="exc")
+
+etiquetas = [e.strip() for e in txt_etiquetas.splitlines() if e.strip()]
+excluir = [norm(e) for e in txt_excluir.splitlines() if e.strip()]
+
+# clasificar segun etiquetas editadas
+df = df.copy()
+df["Etiqueta"] = df["_texto"].apply(lambda t: etiqueta_de(t, etiquetas, excluir))
+rel = df[df["Etiqueta"].notna()].drop(columns=["_texto"])
+
+st.sidebar.divider()
 st.sidebar.header("Filtros")
-cats = sorted(df["Categoria"].dropna().unique())
-sel_cat = st.sidebar.multiselect("Categoría", cats, default=cats)
-objetos = sorted(x for x in df["Objeto"].dropna().unique() if x)
-sel_obj = st.sidebar.multiselect("Objeto", objetos)
 vmin = st.sidebar.number_input("Valor referencial mínimo (S/)", 0, step=1000, value=0)
-txt = st.sidebar.text_input("Buscar en descripción / entidad")
+buscar = st.sidebar.text_input("Buscar en descripción / entidad")
 
-f = df.copy()
-if sel_cat: f = f[f["Categoria"].isin(sel_cat)]
-if sel_obj: f = f[f["Objeto"].isin(sel_obj)]
+f = rel.copy()
 if vmin: f = f[f["Valor referencial"].fillna(0) >= vmin]
-if txt:
-    t = txt.lower()
+if buscar:
+    t = buscar.lower()
     f = f[f["Descripcion"].str.lower().str.contains(t, na=False) |
           f["Entidad"].str.lower().str.contains(t, na=False)]
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Oportunidades vigentes", len(f))
-c2.metric("Valor referencial total", f"S/ {f['Valor referencial'].fillna(0).sum():,.0f}")
-c3.metric("Categorías", f["Categoria"].nunique())
-c4.metric("Procesos revisados", f"{total:,}")
+c1, c2, c3 = st.columns(3)
+c1.metric("Oportunidades encontradas", len(f))
+c2.metric("Etiquetas activas", len(etiquetas))
+c3.metric("Procesos revisados", f"{total:,}")
 
-st.divider()
-st.dataframe(f.sort_values("Fin inscripcion"), use_container_width=True, hide_index=True)
+if f.empty:
+    st.warning("Ninguna oportunidad vigente coincide con las etiquetas actuales. "
+               "Prueba agregando o cambiando términos en el panel de la izquierda.")
+else:
+    st.divider()
+    st.dataframe(
+        f[["Etiqueta","Nomenclatura","Entidad","Objeto","Descripcion",
+           "Valor referencial","Tipo","Fin inscripcion","Presentacion propuestas"]]
+          .sort_values("Fin inscripcion"),
+        use_container_width=True, hide_index=True)
 
-# Resumen por categoria
-with st.expander("Resumen por categoría"):
-    resumen = (f.groupby("Categoria")
-                 .agg(Oportunidades=("Nomenclatura","count"),
-                      Valor_total=("Valor referencial","sum"))
-                 .reset_index())
-    st.dataframe(resumen, use_container_width=True, hide_index=True)
+    with st.expander("Resumen por etiqueta"):
+        st.dataframe(f.groupby("Etiqueta").size().reset_index(name="Oportunidades"),
+                     use_container_width=True, hide_index=True)
 
-st.download_button("⬇️ Descargar Excel (CSV)",
-                   f.to_csv(index=False).encode("utf-8-sig"),
-                   file_name="tracker_licitaciones_vigentes.csv", mime="text/csv")
+    st.download_button("⬇️ Descargar Excel (CSV)",
+        f.to_csv(index=False).encode("utf-8-sig"),
+        file_name="tracker_licitaciones.csv", mime="text/csv")
